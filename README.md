@@ -1,6 +1,7 @@
 # MonitorHub
 
-A lightweight Go service that aggregates real-time system metrics from multiple remote devices (running mymonitor) and displays them via a terminal UI or a browser dashboard.
+A lightweight Go service that aggregates real-time system metrics from multiple remote devices (running mymonitor) and displays them via a terminal UI or a browser dashboard.  This
+project is targeted to the raspberry pi 4 and 3b+
 
 ## Overview
 

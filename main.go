@@ -3,10 +3,10 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
+	"flag"
 	"fmt"
 	"log"
-	"net/http"
+	"os"
 	"os/signal"
 	"sync"
 	"syscall"
@@ -21,11 +21,14 @@ const listenAddr = ":8080"
 var targets = []string{
 	"ws://10.0.4.67:9001/ws",
  	"ws://10.0.4.60:9001/ws",
+	"ws://10.0.4.76:9001/ws",
+	"ws://10.0.4.41:9001/ws",
 }
 // ------------------------
 
 type DeviceMetrics struct {
 	DeviceID     string    `json:"device_id"`
+	Hostname     string    `json:"hostname"`
 	Timestamp    time.Time `json:"timestamp"`
 	CPUUsage     float64   `json:"cpu_usage"`
 	CoreCPUUsage []float64 `json:"core_cpu_usage"`
@@ -155,93 +158,6 @@ func (h *hub) snapshot() []DeviceMetrics {
 	return items
 }
 
-var upgrader = websocket.Upgrader{
-	ReadBufferSize:  1024,
-	WriteBufferSize: 1024,
-	CheckOrigin: func(r *http.Request) bool {
-		return true
-	},
-}
-
-func writePump(c *client) {
-	ticker := time.NewTicker(25 * time.Second)
-	defer func() {
-		ticker.Stop()
-		_ = c.conn.Close()
-	}()
-
-	for {
-		select {
-		case msg, ok := <-c.send:
-			if !ok {
-				_ = c.conn.WriteMessage(websocket.CloseMessage, []byte{})
-				return
-			}
-
-			_ = c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
-			if err := c.conn.WriteMessage(websocket.TextMessage, msg); err != nil {
-				return
-			}
-
-		case <-ticker.C:
-			_ = c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
-			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
-				return
-			}
-		}
-	}
-}
-
-func readPump(c *client, h *hub) {
-	defer func() {
-		h.unregister <- c
-	}()
-
-	c.conn.SetReadLimit(1024)
-	_ = c.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
-	c.conn.SetPongHandler(func(string) error {
-		_ = c.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
-		return nil
-	})
-
-	for {
-		if _, _, err := c.conn.ReadMessage(); err != nil {
-			break
-		}
-	}
-}
-
-func latestHandler(h *hub) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(h.snapshot())
-	}
-}
-
-func wsHandler(h *hub) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		conn, err := upgrader.Upgrade(w, r, nil)
-		if err != nil {
-			return
-		}
-
-		c := &client{
-			conn: conn,
-			send: make(chan []byte, 32),
-		}
-
-		h.register <- c
-
-		go writePump(c)
-		go readPump(c, h)
-	}
-}
-
 type config struct {
 	ListenAddr string
 	Targets    []string
@@ -301,6 +217,9 @@ func collector(ctx context.Context, target string, h *hub) {
 					log.Printf("collector: %s: payload missing device_id, dropping", target)
 					continue
 				}
+				if metrics.Hostname == "" {
+					metrics.Hostname = "unknown-host"
+				}
 				if metrics.Timestamp.IsZero() {
 					metrics.Timestamp = time.Now().UTC()
 				}
@@ -330,6 +249,20 @@ func collector(ctx context.Context, target string, h *hub) {
 }
 
 func main() {
+	webUI := flag.Bool("w", false, "run web UI (HTTP server + browser dashboard)")
+	termUI := flag.Bool("u", false, "run terminal UI")
+	flag.Parse()
+
+	if !*webUI && !*termUI {
+		fmt.Fprintln(os.Stderr, "monitorhub: specify -w (web UI) or -u (terminal UI)")
+		flag.Usage()
+		os.Exit(1)
+	}
+	if *webUI && *termUI {
+		fmt.Fprintln(os.Stderr, "monitorhub: -w and -u are mutually exclusive")
+		os.Exit(1)
+	}
+
 	cfg, err := loadConfig()
 	if err != nil {
 		log.Fatal(err)
@@ -345,40 +278,9 @@ func main() {
 		go collector(ctx, target, h)
 	}
 
-	mux := http.NewServeMux()
-	mux.Handle("/metrics/latest", latestHandler(h))
-	mux.Handle("/ws", wsHandler(h))
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		http.ServeFile(w, r, "monhub.html")
-	})
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok"))
-	})
-
-	server := &http.Server{
-		Addr:              cfg.ListenAddr,
-		Handler:           mux,
-		ReadHeaderTimeout: 5 * time.Second,
-	}
-
-	go func() {
-		<-ctx.Done()
-
-		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer shutdownCancel()
-
-		if err := server.Shutdown(shutdownCtx); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Printf("graceful shutdown failed: %v", err)
-		}
-	}()
-
-	log.Printf("monitorhub listening on %s", cfg.ListenAddr)
-	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		log.Fatal(err)
+	if *webUI {
+		runWebUI(ctx, cfg, h)
+	} else {
+		runTUI(ctx, h)
 	}
 }

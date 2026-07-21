@@ -111,6 +111,7 @@
     }
     .bar-cpu  { background: #38bdf8; }
     .bar-mem  { background: #a78bfa; }
+    .bar-disk { background: #f59e0b; }
 
     .cores {
       display: flex;
@@ -140,7 +141,7 @@
       margin: 10px 0;
     }
 
-    .net-disk {
+    .io-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 6px 16px;
@@ -169,18 +170,24 @@
 
     function fmtRate(bytes) { return fmt(bytes) + '/s'; }
 
+    function clampPct(v) {
+      if (!Number.isFinite(v)) return 0;
+      return Math.max(0, Math.min(v, 100));
+    }
+
     function shortId(id) {
       return id.length > 16 ? id.slice(0, 8) + '…' + id.slice(-8) : id;
     }
 
     function renderCard(m) {
-      const cpuPct  = Math.min(m.cpu_usage, 100).toFixed(1);
+      const cpuPct  = clampPct(m.cpu_usage).toFixed(1);
       const memPct  = m.total_memory > 0
-        ? ((m.used_memory / m.total_memory) * 100).toFixed(1)
+        ? clampPct((m.used_memory / m.total_memory) * 100).toFixed(1)
         : 0;
+      const diskPct = clampPct(m.disk_usage_pct).toFixed(1);
 
       const coreHTML = (m.core_cpu_usage || []).map(v => {
-        const h = Math.min(v, 100).toFixed(0);
+        const h = clampPct(v).toFixed(0);
         return `<div class="core-bar-wrap" title="${v.toFixed(1)}%">
           <div class="core-bar-fill" style="height:${h}%"></div>
         </div>`;
@@ -215,9 +222,18 @@
 
         <hr class="divider" />
 
-        <div class="net-disk">
+        <div class="io-grid">
           <span class="nd-label">Disk read</span>  <span class="nd-value">${fmtRate(m.disk_read)}</span>
           <span class="nd-label">Disk write</span> <span class="nd-value">${fmtRate(m.disk_write)}</span>
+        </div>
+
+        <div class="metric-row">
+          <span class="metric-label">Disk usage</span>
+          <span class="metric-value">${diskPct}%</span>
+        </div>
+        <div class="bar-wrap"><div class="bar-fill bar-disk" style="width:${diskPct}%"></div></div>
+
+        <div class="io-grid">
           <span class="nd-label">Net RX</span>     <span class="nd-value">${fmtRate(m.net_rx)}</span>
           <span class="nd-label">Net TX</span>     <span class="nd-value">${fmtRate(m.net_tx)}</span>
         </div>

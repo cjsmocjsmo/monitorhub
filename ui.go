@@ -281,6 +281,8 @@ func makeCard(d DeviceMetrics, width int) []string {
 		mk(progressBar(memPct, barWidth)),
 		"|" + strings.Repeat("-", inner) + "|",
 		mk(fitTwo("Disk R: "+fmtRate(d.DiskRead), "Disk W: "+fmtRate(d.DiskWrite), inner)),
+		mk(fitTwo("Disk usage", fmt.Sprintf("%.1f%%", clampPct(d.DiskUsagePct)), inner)),
+		mk(progressBar(clampPct(d.DiskUsagePct), barWidth)),
 		mk(fitTwo("Net RX: "+fmtRate(d.NetRX), "Net TX: "+fmtRate(d.NetTX), inner)),
 		"+" + strings.Repeat("-", inner) + "+",
 	}

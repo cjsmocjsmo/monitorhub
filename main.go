@@ -36,6 +36,7 @@ type DeviceMetrics struct {
 	UsedMemory   uint64    `json:"used_memory"`
 	DiskRead     uint64    `json:"disk_read"`
 	DiskWrite    uint64    `json:"disk_write"`
+	DiskUsagePct float64   `json:"disk_usage_pct"`
 	NetRX        uint64    `json:"net_rx"`
 	NetTX        uint64    `json:"net_tx"`
 }

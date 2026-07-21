@@ -61,6 +61,8 @@ Exactly one UI mode must be chosen:
 
 Open `http://localhost:8080` in a browser when running with `-w`.
 
+The web dashboard HTML is embedded into the binary at build time, so single-binary deployments do not require shipping a separate `monhub.html` file.
+
 ## Metrics payload
 
 Each upstream agent must send JSON matching the `DeviceMetrics` schema:
@@ -76,6 +78,7 @@ Each upstream agent must send JSON matching the `DeviceMetrics` schema:
   "used_memory":    4294967296,
   "disk_read":      1048576,
   "disk_write":     524288,
+  "disk_usage_pct": 31.7,
   "net_rx":         2048,
   "net_tx":         1024
 }

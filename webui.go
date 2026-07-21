@@ -103,7 +103,13 @@ func runWebUI(ctx context.Context, cfg config, h *hub) {
 	mux.Handle("/metrics/latest", latestHandler(h))
 	mux.Handle("/ws", wsHandler(h))
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		http.ServeFile(w, r, "monhub.html")
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(monhubHTML)
 	})
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {

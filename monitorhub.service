@@ -1,0 +1,16 @@
+[Unit]
+Description=MonitorHub metrics aggregator
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/monitorhub -w
+Restart=on-failure
+RestartSec=5s
+KillSignal=SIGTERM
+TimeoutStopSec=30s
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

@@ -5,7 +5,7 @@ project is targeted to the raspberry pi 4 and 3b+
 
 ## Overview
 
-MonitorHub connects outbound to one or more upstream WebSocket endpoints (e.g. agents running on monitored hosts). Each agent pushes `DeviceMetrics` payloads at roughly 1-second cadence. MonitorHub maintains the latest snapshot per device and fans updates out to all connected browser clients or renders them in the terminal.
+MonitorHub connects outbound to one or more upstream WebSocket endpoints (e.g. agents running on monitored hosts). Each agent pushes `DeviceMetrics` payloads at roughly 2-second cadence. MonitorHub maintains the latest snapshot per device and fans updates out to all connected browser clients or renders them in the terminal.
 
 ```
 [Device agent :9001] ──ws──┐
@@ -59,7 +59,7 @@ Exactly one UI mode must be chosen:
 ./monitorhub -u
 ```
 
-Open `http://localhost:8080` in a browser when running with `-w`.
+Open `http://your_pi_address:8080` in a browser when running with `-w`.
 
 The web dashboard HTML is embedded into the binary at build time, so single-binary deployments do not require shipping a separate `monhub.html` file.
 

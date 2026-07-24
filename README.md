@@ -73,6 +73,7 @@ Each upstream agent must send JSON matching the `DeviceMetrics` schema:
   "hostname":       "myhost",
   "timestamp":      "2026-07-20T12:00:00Z",
   "cpu_usage":      42.5,
+  "cpu_temp":       61.2,
   "core_cpu_usage": [40.1, 44.9],
   "total_memory":   8589934592,
   "used_memory":    4294967296,

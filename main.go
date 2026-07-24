@@ -33,6 +33,7 @@ type DeviceMetrics struct {
 	Hostname     string    `json:"hostname"`
 	Timestamp    time.Time `json:"timestamp"`
 	CPUUsage     float64   `json:"cpu_usage"`
+	CPUTemp      float64   `json:"cpu_temp"`
 	CoreCPUUsage []float64 `json:"core_cpu_usage"`
 	TotalMemory  uint64    `json:"total_memory"`
 	UsedMemory   uint64    `json:"used_memory"`

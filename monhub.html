@@ -78,7 +78,7 @@
       word-break: break-all;
     }
 
-    .timestamp {
+    .cpu-temp {
       font-size: 0.7rem;
       color: #64748b;
       white-space: nowrap;
@@ -193,9 +193,9 @@
         </div>`;
       }).join('');
 
-      const ts = m.timestamp
-        ? new Date(m.timestamp).toLocaleTimeString()
-        : '';
+      const cpuTemp = Number.isFinite(m.cpu_temp)
+        ? `${m.cpu_temp.toFixed(1)}C`
+        : 'n/a';
 
       return `
         <div class="card-header">
@@ -203,7 +203,7 @@
             <span class="hostname" title="${m.hostname || ''}">${m.hostname || 'Unknown host'}</span>
             <span class="device-id" title="${m.device_id}">${shortId(m.device_id)}</span>
           </div>
-          <span class="timestamp">${ts}</span>
+          <span class="cpu-temp">${cpuTemp}</span>
         </div>
 
         <div class="metric-row">

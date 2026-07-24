@@ -275,6 +275,7 @@ func makeCard(d DeviceMetrics, width int) []string {
 		mk(fitTwo(host, ts, inner)),
 		mk("id: " + shortID(d.DeviceID)),
 		mk(fitTwo("CPU", fmt.Sprintf("%.1f%%", cpuPct), inner)),
+		mk(fitTwo("CPU temp", fmt.Sprintf("%.1fC", d.CPUTemp), inner)),
 		mk(progressBar(cpuPct, barWidth)),
 		mk("Cores: " + coreSparkline(d.CoreCPUUsage, coreAvail)),
 		mk(fitTwo("Memory", fmt.Sprintf("%s / %s (%.1f%%)", fmtBytes(d.UsedMemory), fmtBytes(d.TotalMemory), memPct), inner)),

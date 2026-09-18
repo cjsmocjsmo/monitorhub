@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strconv"
 	"sort"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -15,9 +15,7 @@ import (
 const (
 	ansiReset   = "\033[0m"
 	ansiBold    = "\033[1m"
-	ansiRed     = "\033[31m"
 	ansiYellow  = "\033[33m"
-	ansiGreen   = "\033[32m"
 	ansiCyan    = "\033[36m"
 	clearScreen = "\033[2J\033[H"
 )
@@ -42,17 +40,6 @@ func fmtBytes(b uint64) string {
 
 func fmtRate(b uint64) string {
 	return fmtBytes(b) + "/s"
-}
-
-func cpuColor(pct float64) string {
-	switch {
-	case pct >= 80:
-		return ansiRed
-	case pct >= 50:
-		return ansiYellow
-	default:
-		return ansiGreen
-	}
 }
 
 func fmtAge(t time.Time) string {

@@ -26,6 +26,9 @@ var targets = []string{
 	"ws://10.0.4.67:9001/ws",
 	"ws://10.0.4.76:9001/ws",
 }
+
+const offlineAfter = 30 * time.Second
+
 // ------------------------
 
 type DeviceMetrics struct {
@@ -45,9 +48,21 @@ type DeviceMetrics struct {
 }
 
 type wsMessage struct {
-	Type    string          `json:"type"`
-	Device  *DeviceMetrics  `json:"device,omitempty"`
-	Devices []DeviceMetrics `json:"devices,omitempty"`
+	Type     string          `json:"type"`
+	Device   *DeviceMetrics  `json:"device,omitempty"`
+	Devices  []DeviceMetrics `json:"devices,omitempty"`
+	Status   *DeviceStatus   `json:"status,omitempty"`
+	Statuses []DeviceStatus  `json:"statuses,omitempty"`
+}
+
+type DeviceStatus struct {
+	DeviceID string    `json:"device_id"`
+	Hostname string    `json:"hostname"`
+	Target   string    `json:"target"`
+	State    string    `json:"state"`
+	Online   bool      `json:"online"`
+	LastSeen time.Time `json:"last_seen,omitempty"`
+	Since    time.Time `json:"since,omitempty"`
 }
 
 type client struct {
@@ -59,24 +74,43 @@ type hub struct {
 	mu sync.RWMutex
 
 	latest map[string]DeviceMetrics
+	status map[string]DeviceStatus
 
 	clients    map[*client]struct{}
 	register   chan *client
 	unregister chan *client
-	broadcast  chan DeviceMetrics
+	broadcast  chan metricUpdate
 }
 
 func newHub() *hub {
 	return &hub{
 		latest:     make(map[string]DeviceMetrics),
+		status:     make(map[string]DeviceStatus),
 		clients:    make(map[*client]struct{}),
 		register:   make(chan *client),
 		unregister: make(chan *client),
-		broadcast:  make(chan DeviceMetrics, 256),
+		broadcast:  make(chan metricUpdate, 256),
 	}
 }
 
+func newHubWithTargets(targets []string) *hub {
+	h := newHub()
+	for _, target := range targets {
+		h.status[target] = DeviceStatus{
+			DeviceID: target,
+			Hostname: target,
+			Target:   target,
+			State:    "connecting",
+			Since:    time.Now().UTC(),
+		}
+	}
+	return h
+}
+
 func (h *hub) run(ctx context.Context) {
+	statusTicker := time.NewTicker(time.Second)
+	defer statusTicker.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -96,9 +130,13 @@ func (h *hub) run(ctx context.Context) {
 			for _, m := range h.latest {
 				snapshot = append(snapshot, m)
 			}
+			statuses := make([]DeviceStatus, 0, len(h.status))
+			for _, status := range h.status {
+				statuses = append(statuses, status)
+			}
 			h.mu.Unlock()
 
-			payload, err := json.Marshal(wsMessage{Type: "snapshot", Devices: snapshot})
+			payload, err := json.Marshal(wsMessage{Type: "snapshot", Devices: snapshot, Statuses: statuses})
 			if err == nil {
 				select {
 				case c.send <- payload:
@@ -111,17 +149,46 @@ func (h *hub) run(ctx context.Context) {
 		case c := <-h.unregister:
 			h.removeClient(c)
 
-		case metrics := <-h.broadcast:
+		case <-statusTicker.C:
+			h.markOffline(time.Now().UTC())
+
+		case update := <-h.broadcast:
+			metrics := update.metrics
 			h.mu.Lock()
 			h.latest[metrics.DeviceID] = metrics
+			previous, hadPrevious := h.status[update.target]
+			status := DeviceStatus{
+				DeviceID: metrics.DeviceID,
+				Hostname: metrics.Hostname,
+				Target:   update.target,
+				State:    "online",
+				Online:   true,
+				LastSeen: time.Now().UTC(),
+				Since:    time.Now().UTC(),
+			}
+			h.status[update.target] = status
 
 			payload, err := json.Marshal(wsMessage{Type: "update", Device: &metrics})
 			if err != nil {
 				h.mu.Unlock()
 				continue
 			}
+			statusPayload := []byte(nil)
+			if !hadPrevious || !previous.Online || previous.DeviceID != status.DeviceID {
+				statusPayload, _ = json.Marshal(wsMessage{Type: "status", Status: &status})
+			}
 
 			for c := range h.clients {
+				if statusPayload != nil {
+					select {
+					case c.send <- statusPayload:
+					default:
+						close(c.send)
+						delete(h.clients, c)
+						_ = c.conn.Close()
+						continue
+					}
+				}
 				select {
 				case c.send <- payload:
 				default:
@@ -131,6 +198,35 @@ func (h *hub) run(ctx context.Context) {
 				}
 			}
 			h.mu.Unlock()
+		}
+	}
+}
+
+func (h *hub) markOffline(now time.Time) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	for target, status := range h.status {
+		if status.State == "offline" ||
+			(status.State == "online" && now.Sub(status.LastSeen) <= offlineAfter) ||
+			(status.State == "connecting" && now.Sub(status.Since) <= offlineAfter) {
+			continue
+		}
+		status.State = "offline"
+		status.Online = false
+		h.status[target] = status
+		payload, err := json.Marshal(wsMessage{Type: "status", Status: &status})
+		if err != nil {
+			continue
+		}
+		for c := range h.clients {
+			select {
+			case c.send <- payload:
+			default:
+				close(c.send)
+				delete(h.clients, c)
+				_ = c.conn.Close()
+			}
 		}
 	}
 }
@@ -146,8 +242,13 @@ func (h *hub) removeClient(c *client) {
 	}
 }
 
-func (h *hub) submit(metrics DeviceMetrics) {
-	h.broadcast <- metrics
+type metricUpdate struct {
+	metrics DeviceMetrics
+	target  string
+}
+
+func (h *hub) submit(metrics DeviceMetrics, target string) {
+	h.broadcast <- metricUpdate{metrics: metrics, target: target}
 }
 
 func (h *hub) snapshot() []DeviceMetrics {
@@ -227,7 +328,7 @@ func collector(ctx context.Context, target string, h *hub) {
 				if metrics.Timestamp.IsZero() {
 					metrics.Timestamp = time.Now().UTC()
 				}
-				h.submit(metrics)
+				h.submit(metrics, target)
 			}
 		}()
 
@@ -275,7 +376,7 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	h := newHub()
+	h := newHubWithTargets(cfg.Targets)
 	go h.run(ctx)
 
 	for _, target := range cfg.Targets {

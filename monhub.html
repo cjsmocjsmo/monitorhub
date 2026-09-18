@@ -35,6 +35,19 @@
     #status.connected    { background: #14532d; color: #86efac; }
     #status.disconnected { background: #450a0a; color: #fca5a5; }
 
+    #offline-notice {
+      display: none;
+      margin-bottom: 20px;
+      padding: 12px 16px;
+      border: 1px solid #991b1b;
+      border-radius: 8px;
+      background: #2a1215;
+      color: #fecaca;
+    }
+    #offline-notice.visible { display: block; }
+    #offline-notice strong { display: block; margin-bottom: 4px; }
+    #offline-list { color: #fca5a5; font-size: 0.85rem; }
+
     #grid {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
@@ -46,6 +59,25 @@
       border: 1px solid #334155;
       border-radius: 10px;
       padding: 16px;
+    }
+    .card.offline {
+      border-color: #991b1b;
+      opacity: 0.72;
+    }
+    .device-status {
+      display: inline-block;
+      margin-bottom: 12px;
+      padding: 3px 8px;
+      border-radius: 4px;
+      background: #14532d;
+      color: #86efac;
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+    .device-status.offline {
+      background: #450a0a;
+      color: #fca5a5;
     }
 
     .card-header {
@@ -154,12 +186,20 @@
 <body>
   <h1>MonitorHub</h1>
   <div id="status">Connecting…</div>
+  <div id="offline-notice">
+    <strong>Offline devices</strong>
+    <div id="offline-list"></div>
+  </div>
   <div id="grid"></div>
 
   <script>
     const grid = document.getElementById('grid');
     const statusEl = document.getElementById('status');
+    const offlineNotice = document.getElementById('offline-notice');
+    const offlineList = document.getElementById('offline-list');
     const cards = {};
+    const devices = {};
+    const statuses = {};
 
     function fmt(bytes) {
       if (bytes >= 1073741824) return (bytes / 1073741824).toFixed(1) + ' GB';
@@ -179,7 +219,20 @@
       return id.length > 16 ? id.slice(0, 8) + '…' + id.slice(-8) : id;
     }
 
+    function ageText(lastSeen) {
+      if (!lastSeen) return 'never';
+      const seconds = Math.max(0, Math.floor((Date.now() - Date.parse(lastSeen)) / 1000));
+      if (seconds < 60) return `${seconds}s ago`;
+      return `${Math.floor(seconds / 60)}m ${seconds % 60}s ago`;
+    }
+
+    function statusFor(m) {
+      return statuses[m.device_id] || null;
+    }
+
     function renderCard(m) {
+      const status = statusFor(m);
+      const offline = status && status.state === 'offline';
       const cpuPct  = clampPct(m.cpu_usage).toFixed(1);
       const memPct  = m.total_memory > 0
         ? clampPct((m.used_memory / m.total_memory) * 100).toFixed(1)
@@ -198,6 +251,7 @@
         : 'n/a';
 
       return `
+        <div class="device-status${offline ? ' offline' : ''}">${offline ? `Offline — last seen ${ageText(status.last_seen)}` : 'Online'}</div>
         <div class="card-header">
           <div class="device-meta">
             <span class="hostname" title="${m.hostname || ''}">${m.hostname || 'Unknown host'}</span>
@@ -241,6 +295,7 @@
     }
 
     function upsertDevice(m) {
+      devices[m.device_id] = m;
       let card = cards[m.device_id];
       if (!card) {
         card = document.createElement('div');
@@ -248,7 +303,30 @@
         grid.appendChild(card);
         cards[m.device_id] = card;
       }
+      const status = statusFor(m);
+      card.className = `card${status && status.state === 'offline' ? ' offline' : ''}`;
       card.innerHTML = renderCard(m);
+    }
+
+    function renderOfflineNotice() {
+      const offline = Object.values(statuses).filter(s => s.state === 'offline');
+      offlineNotice.className = offline.length ? 'visible' : '';
+      offlineList.textContent = offline.map(s => {
+        const name = s.device_id === s.target ? s.target : (s.hostname || s.device_id);
+        return `${name} — last seen ${ageText(s.last_seen)}`;
+      }).join(' • ');
+    }
+
+    function applyStatus(status) {
+      if (!status || !status.target) return;
+      Object.keys(statuses).forEach(key => {
+        if (key !== status.device_id && statuses[key].target === status.target) {
+          delete statuses[key];
+        }
+      });
+      statuses[status.device_id] = status;
+      if (devices[status.device_id]) upsertDevice(devices[status.device_id]);
+      renderOfflineNotice();
     }
 
     function connect() {
@@ -273,9 +351,13 @@
         try { msg = JSON.parse(event.data); } catch { return; }
 
         if (msg.type === 'snapshot') {
+          (msg.statuses || []).forEach(applyStatus);
           (msg.devices || []).forEach(upsertDevice);
+          renderOfflineNotice();
         } else if (msg.type === 'update' && msg.device) {
           upsertDevice(msg.device);
+        } else if (msg.type === 'status' && msg.status) {
+          applyStatus(msg.status);
         }
       };
     }

@@ -65,19 +65,27 @@
       opacity: 0.72;
     }
     .device-status {
-      display: inline-block;
+      display: block;
+      width: 100%;
       margin-bottom: 12px;
-      padding: 3px 8px;
+      padding: 8px 10px;
       border-radius: 4px;
       background: #14532d;
       color: #86efac;
-      font-size: 0.72rem;
+      font-size: 0.8rem;
       font-weight: 700;
       text-transform: uppercase;
+      letter-spacing: 0.04em;
+      text-align: center;
     }
     .device-status.offline {
       background: #450a0a;
       color: #fca5a5;
+    }
+    .offline-message {
+      padding: 16px 0 4px;
+      color: #fca5a5;
+      font-size: 0.85rem;
     }
 
     .card-header {
@@ -232,7 +240,19 @@
 
     function renderCard(m) {
       const status = statusFor(m);
-      const offline = status && status.state === 'offline';
+      const offline = status && !status.online;
+      if (offline) {
+        return `
+          <div class="device-status offline">Offline</div>
+          <div class="card-header">
+            <div class="device-meta">
+              <span class="hostname" title="${m.hostname || ''}">${m.hostname || 'Unknown host'}</span>
+              <span class="device-id" title="${m.device_id}">${shortId(m.device_id)}</span>
+            </div>
+          </div>
+          <div class="offline-message">No live data available. Last seen ${ageText(status.last_seen)}.</div>
+        `;
+      }
       const cpuPct  = clampPct(m.cpu_usage).toFixed(1);
       const memPct  = m.total_memory > 0
         ? clampPct((m.used_memory / m.total_memory) * 100).toFixed(1)
@@ -308,6 +328,31 @@
       card.innerHTML = renderCard(m);
     }
 
+    function upsertStatusCard(status) {
+      let card = cards[status.device_id];
+      if (!card) {
+        card = document.createElement('div');
+        card.className = 'card';
+        grid.appendChild(card);
+        cards[status.device_id] = card;
+      }
+      const offline = !status.online;
+      card.className = `card${offline ? ' offline' : ''}`;
+      const name = status.hostname || status.target || 'Unknown host';
+      card.innerHTML = `
+        <div class="device-status${offline ? ' offline' : ''}">${offline ? 'Offline' : 'Online'}</div>
+        <div class="card-header">
+          <div class="device-meta">
+            <span class="hostname" title="${name}">${name}</span>
+            <span class="device-id" title="${status.device_id}">${shortId(status.device_id)}</span>
+          </div>
+        </div>
+        <div class="offline-message">${offline
+          ? `No live data available. Last seen ${ageText(status.last_seen)}.`
+          : 'Waiting for live data.'}</div>
+      `;
+    }
+
     function renderOfflineNotice() {
       const offline = Object.values(statuses).filter(s => s.state === 'offline');
       offlineNotice.className = offline.length ? 'visible' : '';
@@ -325,7 +370,11 @@
         }
       });
       statuses[status.device_id] = status;
-      if (devices[status.device_id]) upsertDevice(devices[status.device_id]);
+      if (devices[status.device_id]) {
+        upsertDevice(devices[status.device_id]);
+      } else {
+        upsertStatusCard(status);
+      }
       renderOfflineNotice();
     }
 

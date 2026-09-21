@@ -235,6 +235,8 @@
     }
 
     function statusFor(m) {
+      console.log('statusFor', m);
+      console.log('statuses', statuses);
       return statuses[m.device_id] || null;
     }
 

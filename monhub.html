@@ -241,7 +241,9 @@
     }
 
     function renderCard(m) {
+      console.log('renderCard', m);
       const status = statusFor(m);
+      console.log('status', status);
       const offline = status && !status.online;
       if (offline) {
         return `

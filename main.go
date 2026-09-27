@@ -25,6 +25,7 @@ var targets = []string{
 	"ws://10.0.4.60:9001/ws",
 	"ws://10.0.4.67:9001/ws",
 	"ws://10.0.4.76:9001/ws",
+	"ws://10.0.4.23:9001/ws",
 }
 
 const offlineAfter = 30 * time.Second

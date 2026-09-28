@@ -5,7 +5,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/monitorhub -w
+ExecStart=/usr/local/bin/monitorhubrpi64 -w
 Restart=on-failure
 RestartSec=5s
 KillSignal=SIGTERM
